@@ -1,0 +1,346 @@
+<!doctype html>
+<!--
+Simple Hiragana & Katakana Flashcards
+Single-file app (HTML/CSS/JS) suitable for GitHub Pages
+- Config page: choose characters (toggle panels). START sends selected to cards page
+- Cards page: shows large character full-screen; NEXT picks random character (not repeating immediately)
+- STOP returns to config page (preserves selection)
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Hiragana & Katakana Flashcards</title>
+  <style>
+    :root{
+      --bg:#0f1724; /* dark background */
+      --panel:#0b1220;
+      --accent:#ffcc00;
+      --muted:#94a3b8;
+      --card:#0b1220;
+      --active:#164e63;
+      --gap:12px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color-scheme: dark;
+    }
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071024 0%, #071827 100%);color:#e6edf3}
+    .app{min-height:100vh;display:flex;flex-direction:column}
+
+    header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px}
+    header h1{font-size:18px;margin:0;font-weight:600}
+    .start-btn{background:linear-gradient(90deg,var(--accent),#ffb84d);color:#081022;border:none;padding:10px 16px;border-radius:10px;font-weight:700;box-shadow:0 6px 18px rgba(0,0,0,0.45);cursor:pointer}
+    .start-btn:disabled{opacity:0.45;cursor:not-allowed}
+
+    main.container{padding:20px;display:grid;gap:20px}
+    .section{background:rgba(255,255,255,0.02);padding:14px;border-radius:12px}
+    .section h2{margin:0 0 12px 0;font-size:15px;display:flex;align-items:center;justify-content:space-between}
+    .controls{display:flex;gap:10px}
+    .controls button{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:6px 10px;border-radius:8px;color:var(--muted);cursor:pointer}
+
+    .grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(80px,1fr))}
+    .tile{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.06));border-radius:10px;display:flex;align-items:center;justify-content:center;padding:18px;font-size:28px;cursor:pointer;user-select:none;border:1px solid rgba(255,255,255,0.03)}
+    .tile.small{font-size:20px;padding:12px}
+    .tile.active{outline:4px solid rgba(255,204,0,0.14);box-shadow:0 6px 16px rgba(0,0,0,0.45);transform:translateY(-2px)}
+    .tile:focus{outline:2px dashed rgba(255,255,255,0.08)}
+
+    footer{padding:16px 20px;display:flex;align-items:center;justify-content:flex-end}
+
+    /* Cards page */
+    .cards{display:none;min-height:calc(100vh - 72px);align-items:center;justify-content:center;position:relative}
+    .cards.active{display:flex}
+    .card-display{display:flex;align-items:center;justify-content:center;flex-direction:column;width:100%;height:100%}
+    .char{font-size:28vmin;line-height:1;height:100%;display:flex;align-items:center;justify-content:center}
+    .cards-controls{position:absolute;left:0;right:0;bottom:24px;display:flex;justify-content:center;gap:18px}
+    .btn{padding:12px 20px;border-radius:12px;border:none;font-weight:700;cursor:pointer}
+    .btn.next{background:linear-gradient(90deg,#0ea5a9,#16a34a);color:#021018}
+    .btn.stop{background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.06)}
+
+    /* small screens adjustments */
+    @media (max-width:600px){
+      .grid{grid-template-columns:repeat(4,1fr)}
+      .tile{font-size:22px;padding:12px}
+      .char{font-size:40vmin}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Hiragana & Katakana — Flashcards</h1>
+      <div>
+        <button id="startBtn" class="start-btn" title="Start flashcards">START</button>
+      </div>
+    </header>
+
+    <main class="container" id="configPage">
+      <div class="section" id="hiraganaSection">
+        <h2>Hiragana <div class="controls"><button data-action="select-all" data-target="hiragana">Select all</button><button data-action="deselect-all" data-target="hiragana">Deselect</button></div></h2>
+        <div class="grid" id="hiraganaGrid" aria-label="Hiragana characters"></div>
+      </div>
+
+      <div class="section" id="katakanaSection">
+        <h2>Katakana <div class="controls"><button data-action="select-all" data-target="katakana">Select all</button><button data-action="deselect-all" data-target="katakana">Deselect</button></div></h2>
+        <div class="grid" id="katakanaGrid" aria-label="Katakana characters"></div>
+      </div>
+    </main>
+
+    <div id="cardsPage" class="cards" role="application" aria-hidden="true">
+      <div class="card-display">
+        <div id="charDisplay" class="char" aria-live="polite">&nbsp;</div>
+      </div>
+      <div class="cards-controls">
+        <button id="stopBtn" class="btn stop">STOP</button>
+        <button id="nextBtn" class="btn next">NEXT</button>
+      </div>
+    </div>
+
+    <footer>
+      <small style="color:var(--muted)">Tip: click tiles to toggle which characters to include. Use STOP to return.</small>
+    </footer>
+  </div>
+
+  <script>
+    // Basic sets of 46 standard hiragana and katakana characters
+    const HIRAGANA = [
+      'あ','い','う','え','お',
+      'か','き','く','け','こ',
+      'さ','し','す','せ','そ',
+      'た','ち','つ','て','と',
+      'な','に','ぬ','ね','の',
+      'は','ひ','ふ','へ','ほ',
+      'ま','み','む','め','も',
+      'や','ゆ','よ',
+      'ら','り','る','れ','ろ',
+      'わ','を','ん'
+    ];
+
+    const KATAKANA = [
+      'ア','イ','ウ','エ','オ',
+      'カ','キ','ク','ケ','コ',
+      'サ','シ','ス','セ','ソ',
+      'タ','チ','ツ','テ','ト',
+      'ナ','ニ','ヌ','ネ','ノ',
+      'ハ','ヒ','フ','ヘ','ホ',
+      'マ','ミ','ム','メ','モ',
+      'ヤ','ユ','ヨ',
+      'ラ','リ','ル','レ','ロ',
+      'ワ','ヲ','ン'
+    ];
+
+    // DOM refs
+    const hiraganaGrid = document.getElementById('hiraganaGrid');
+    const katakanaGrid = document.getElementById('katakanaGrid');
+    const startBtn = document.getElementById('startBtn');
+    const cardsPage = document.getElementById('cardsPage');
+    const configPage = document.getElementById('configPage');
+    const charDisplay = document.getElementById('charDisplay');
+    const nextBtn = document.getElementById('nextBtn');
+    const stopBtn = document.getElementById('stopBtn');
+
+    // Util: create tiles
+    function makeTile(char, group){
+      const el = document.createElement('button');
+      el.className = 'tile';
+      el.type = 'button';
+      el.setAttribute('data-char', char);
+      el.setAttribute('data-group', group);
+      el.setAttribute('aria-pressed', 'false');
+      el.title = char;
+      el.innerText = char;
+      el.addEventListener('click', ()=>toggleTile(el));
+      el.addEventListener('keydown', (e)=>{ if(e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); toggleTile(el);} });
+      return el;
+    }
+
+    function toggleTile(el, force){
+      const isActive = el.classList.contains('active');
+      const doActive = typeof force !== 'undefined' ? force : !isActive;
+      el.classList.toggle('active', doActive);
+      el.setAttribute('aria-pressed', doActive ? 'true' : 'false');
+      updateStartState();
+      saveSelectionToStorage();
+    }
+
+    // populate grids
+    function populate(){
+      HIRAGANA.forEach(c=>hiraganaGrid.appendChild(makeTile(c,'hiragana')));
+      KATAKANA.forEach(c=>katakanaGrid.appendChild(makeTile(c,'katakana')));
+    }
+
+    // Selection helpers
+    function getSelectedChars(){
+      const tiles = document.querySelectorAll('.tile.active');
+      return Array.from(tiles).map(t=>t.getAttribute('data-char'));
+    }
+
+    function setAllInGroup(group, on){
+      const tiles = document.querySelectorAll(`.tile[data-group="${group}"]`);
+      tiles.forEach(t=>toggleTile(t, on));
+    }
+
+    // Buttons for select all / deselect
+    document.addEventListener('click', (e)=>{
+      const btn = e.target.closest('button[data-action]');
+      if(!btn) return;
+      const action = btn.getAttribute('data-action');
+      const target = btn.getAttribute('data-target');
+      if(action === 'select-all') setAllInGroup(target, true);
+      if(action === 'deselect-all') setAllInGroup(target, false);
+    });
+
+    // Start button logic
+    startBtn.addEventListener('click', ()=>{
+      const chosen = getSelectedChars();
+      if(!chosen.length) return;
+      startSession(chosen);
+      showCardsPage();
+    });
+
+    // Keyboard shortcut: S to start
+    document.addEventListener('keydown', (e)=>{
+      if(e.key.toLowerCase() === 's' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
+        startBtn.click();
+      }
+    });
+
+    // Cards logic
+    let sessionChars = [];
+    let currentChar = null;
+
+    function startSession(list){
+      sessionChars = Array.from(list);
+      // shuffle not necessary because we pick randomly each time; keep current null
+      currentChar = null;
+      // store to localStorage so STOP can preserve
+      localStorage.setItem('flash_selected', JSON.stringify(sessionChars));
+      pickNextNonRepeat();
+    }
+
+    function pickRandom(){
+      if(!sessionChars || !sessionChars.length) return null;
+      const idx = Math.floor(Math.random() * sessionChars.length);
+      return sessionChars[idx];
+    }
+
+    function pickNextNonRepeat(){
+      if(!sessionChars || !sessionChars.length){ charDisplay.innerText = '—'; return; }
+      if(sessionChars.length === 1){ currentChar = sessionChars[0]; charDisplay.innerText = currentChar; return; }
+      // pick random but different from currentChar
+      let next = pickRandom();
+      let attempts = 0;
+      while(next === currentChar && attempts < 20){ next = pickRandom(); attempts++; }
+      // fallback: if attempts exhausted, pick the next index (cyclic)
+      if(next === currentChar){
+        const idx = sessionChars.indexOf(currentChar);
+        next = sessionChars[(idx + 1) % sessionChars.length] || sessionChars[0];
+      }
+      currentChar = next;
+      charDisplay.innerText = currentChar;
+    }
+
+    nextBtn.addEventListener('click', ()=>{
+      pickNextNonRepeat();
+    });
+
+    stopBtn.addEventListener('click', ()=>{
+      showConfigPage();
+    });
+
+    // Navigation
+    function showCardsPage(){
+      cardsPage.classList.add('active');
+      cardsPage.setAttribute('aria-hidden','false');
+      configPage.style.display = 'none';
+      // focus next button for quick flow
+      nextBtn.focus();
+    }
+    function showConfigPage(){
+      cardsPage.classList.remove('active');
+      cardsPage.setAttribute('aria-hidden','true');
+      configPage.style.display = '';
+      // keep selections; restore stored selection highlight
+      restoreSelectionFromStorage();
+      // show last selected tile in view
+      startBtn.focus();
+    }
+
+    // Persistence in localStorage
+    function saveSelectionToStorage(){
+      const selected = getSelectedChars();
+      localStorage.setItem('flash_tiles', JSON.stringify(selected));
+    }
+
+    function restoreSelectionFromStorage(){
+      const raw = localStorage.getItem('flash_tiles');
+      if(!raw) return;
+      let arr; try{ arr = JSON.parse(raw); }catch(e){return}
+      // clear all then set those in arr
+      document.querySelectorAll('.tile').forEach(t=>{ t.classList.remove('active'); t.setAttribute('aria-pressed','false'); });
+      arr.forEach(ch => {
+        const tile = document.querySelector(`.tile[data-char='${ch}']`);
+        if(tile) { tile.classList.add('active'); tile.setAttribute('aria-pressed','true'); }
+      });
+      updateStartState();
+    }
+
+    // Update START button enabled/disabled
+    function updateStartState(){
+      const any = getSelectedChars().length > 0;
+      startBtn.disabled = !any;
+      startBtn.setAttribute('aria-disabled', !any);
+    }
+
+    // Initial setup
+    populate();
+    restoreSelectionFromStorage();
+    updateStartState();
+
+    // If returning to page (STOP), preserve last session selection
+    // If user arrives with selection already stored and clicks START again, we resume
+    // Also support deep-linking where hash="#cards" and a selection exists
+    window.addEventListener('hashchange', ()=>{
+      if(location.hash === '#cards'){
+        const chosen = JSON.parse(localStorage.getItem('flash_selected') || '[]');
+        if(chosen.length) { startSession(chosen); showCardsPage(); }
+      }
+    });
+
+    // Small accessibility improvements
+    // Double-click on header START toggles all tiles (convenience)
+    let header = document.querySelector('header h1');
+    header.addEventListener('dblclick', ()=>{
+      const someActive = document.querySelectorAll('.tile.active').length > 0;
+      document.querySelectorAll('.tile').forEach(t=>toggleTile(t, !someActive));
+    });
+
+    // Preserve session when closing cards and reopening
+    // Show first card on load if a session was started and hash indicates cards
+    (function checkDeepStart(){
+      const saved = JSON.parse(localStorage.getItem('flash_selected') || '[]');
+      if(location.hash === '#cards' && saved.length){
+        startSession(saved);
+        showCardsPage();
+      }
+    })();
+
+    // Ensure clicking START navigates and stores session (so STOP can restore)
+    startBtn.addEventListener('click', ()=>{
+      const chosen = getSelectedChars();
+      if(!chosen.length) return;
+      // store and change hash for shareable state
+      localStorage.setItem('flash_selected', JSON.stringify(chosen));
+      location.hash = '#cards';
+    });
+
+    // Performance: when leaving page hide large char text to avoid weird rendering
+    window.addEventListener('visibilitychange', ()=>{
+      if(document.hidden) charDisplay.innerText = '';
+      else if(cardsPage.classList.contains('active') && currentChar) charDisplay.innerText = currentChar;
+    });
+
+    // Prevent text selection while clicking tiles rapidly
+    document.addEventListener('mousedown', (e)=>{ if(e.target.classList && e.target.classList.contains('tile')) e.preventDefault(); });
+
+  </script>
+</body>
+</html>
